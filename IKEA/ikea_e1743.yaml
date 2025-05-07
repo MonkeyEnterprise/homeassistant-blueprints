@@ -1,0 +1,133 @@
+
+blueprint:
+  name: IKEA Tradfri - ON/OFF Switch E1743
+  description: >
+    Control lights using an IKEA Tradfri on/off switch of type E1743.
+    Supports dimming with long press and configurable transition/dimming behavior.
+  domain: automation
+  input:
+    remote:
+      name: Remote
+      description: The Tradfri remote to use
+      selector:
+        device:
+          integration: zha
+          manufacturer: "IKEA of Sweden"
+          model: "TRADFRI on/off switch"
+    light:
+      name: Light(s)
+      description: The light(s) to control
+      selector:
+        target:
+          entity:
+            domain: light
+    on_off_transition:
+      name: On/Off transition (seconds)
+      description: How long it takes to turn the light on/off
+      default: 0.5
+      selector:
+        number:
+          min: 1
+          max: 10.0
+          step: 0.1
+          unit_of_measurement: s
+          mode: slider
+    dim_step_pct:
+      name: Dim step size (%)
+      description: Brightness change per dim step
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+    dim_step_delay:
+      name: Delay between dim steps (seconds)
+      description: Time to wait between dimming steps
+      default: 0.1
+      selector:
+        number:
+          min: 0.1
+          max: 2
+          step: 0.1
+          unit_of_measurement: s
+
+mode: restart
+
+trigger:
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+
+variables:
+  command: "{{ trigger.event.data.command }}"
+  cluster_id: "{{ trigger.event.data.cluster_id }}"
+  endpoint_id: "{{ trigger.event.data.endpoint_id }}"
+  transition: !input on_off_transition
+  dim_step: !input dim_step_pct
+  dim_delay: !input dim_step_delay
+
+action:
+  - choose:
+      - conditions:
+          - "{{ command == 'on' }}"
+          - "{{ cluster_id == 6 }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light
+            data:
+              transition: "{{ transition }}"
+      - conditions:
+          - "{{ command == 'off' }}"
+          - "{{ cluster_id == 6 }}"
+        sequence:
+          - service: light.turn_off
+            target: !input light
+            data:
+              transition: "{{ transition }}"
+      - conditions:
+          - "{{ command in ['move_with_on_off', 'move'] }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.move_mode == 0 }}"
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
+              sequence:
+                - service: light.turn_on
+                  target: !input light
+                  data:
+                    brightness_step_pct: "{{ dim_step }}"
+                    transition: 0.3
+                - delay:
+                    seconds: "{{ dim_delay }}"
+      - conditions:
+          - "{{ command in ['move_with_on_off', 'move'] }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.move_mode == 1 }}"
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
+              sequence:
+                - service: light.turn_on
+                  target: !input light
+                  data:
+                    brightness_step_pct: "-{{ dim_step }}"
+                    transition: 0.3
+                - delay:
+                    seconds: "{{ dim_delay }}"
+      - conditions:
+          - "{{ command in ['stop', 'stop_with_on_off'] }}"
+          - "{{ cluster_id == 8 }}"
+        sequence:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.stop_dimming
+  - service: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.stop_dimming
