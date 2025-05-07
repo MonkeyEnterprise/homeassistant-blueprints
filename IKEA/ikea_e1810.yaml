@@ -1,0 +1,163 @@
+blueprint:
+  name: IKEA Tradfri - Remote Dimmer E1810
+  description: >
+    Control lights using an IKEA Tradfri remote dimmer E1810.
+    Supports dimming with long press and configurable transition/dimming behavior.
+    Stop commands are handled internally, no external automation triggers are required.
+  domain: automation
+  input:
+    remote:
+      name: Remote
+      description: The Tradfri remote dimmer to use
+      selector:
+        device:
+          integration: zha
+          manufacturer: "IKEA of Sweden"
+          model: "TRADFRI remote control"
+    light:
+      name: Light(s)
+      description: The light(s) to control
+      selector:
+        target:
+          entity:
+            domain: light
+    on_off_transition:
+      name: On/Off transition (seconds)
+      description: How long it takes to turn the light on/off
+      default: 0.5
+      selector:
+        number:
+          min: 1
+          max: 10.0
+          step: 0.1
+          unit_of_measurement: s
+          mode: slider
+    dim_step_pct:
+      name: Dim step size (%)
+      description: Brightness change per dim step
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: '%'
+    dim_step_delay:
+      name: Delay between dim steps (seconds)
+      description: Time to wait between dimming steps
+      default: 0.1
+      selector:
+        number:
+          min: 0.1
+          max: 2
+          step: 0.1
+          unit_of_measurement: s
+
+mode: restart
+
+trigger:
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+
+variables:
+  command: "{{ trigger.event.data.command }}"
+  cluster_id: "{{ trigger.event.data.cluster_id }}"
+  transition: !input on_off_transition
+  dim_step: !input dim_step_pct
+  dim_delay: !input dim_step_delay
+
+action:
+  - choose:
+      # Toggle light
+      - conditions:
+          - "{{ command == 'toggle' }}"
+          - "{{ cluster_id == 6 }}"
+        sequence:
+          - service: light.toggle
+            target: !input light
+            data:
+              transition: "{{ transition }}"
+
+      # Dim up (long press)
+      - conditions:
+          - "{{ command == 'move_with_on_off' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.move_mode == 0 }}"
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: true
+              sequence:
+                - service: light.turn_on
+                  target: !input light
+                  data:
+                    brightness_step_pct: "{{ dim_step }}"
+                    transition: 0.3
+                - delay:
+                    seconds: "{{ dim_delay }}"
+                - wait_for_trigger:
+                    - platform: event
+                      event_type: zha_event
+                      event_data:
+                        device_id: !input remote
+                        cluster_id: 8
+                        command:
+                          - stop
+                          - stop_with_on_off
+                - stop: Stop dimming up
+
+      # Dim down (long press)
+      - conditions:
+          - "{{ command == 'move' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.move_mode == 1 }}"
+        sequence:
+          - repeat:
+              while:
+                - condition: template
+                  value_template: true
+              sequence:
+                - service: light.turn_on
+                  target: !input light
+                  data:
+                    brightness_step_pct: "-{{ dim_step }}"
+                    transition: 0.3
+                - delay:
+                    seconds: "{{ dim_delay }}"
+                - wait_for_trigger:
+                    - platform: event
+                      event_type: zha_event
+                      event_data:
+                        device_id: !input remote
+                        cluster_id: 8
+                        command:
+                          - stop
+                          - stop_with_on_off
+                - stop: Stop dimming down
+
+      # Step up (short press)
+      - conditions:
+          - "{{ command == 'step_with_on_off' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.step_mode == 0 }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light
+            data:
+              brightness_step_pct: "{{ dim_step }}"
+              transition: 0.3
+
+      # Step down (short press)
+      - conditions:
+          - "{{ command == 'step' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ trigger.event.data.params.step_mode == 1 }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light
+            data:
+              brightness_step_pct: "-{{ dim_step }}"
+              transition: 0.3
