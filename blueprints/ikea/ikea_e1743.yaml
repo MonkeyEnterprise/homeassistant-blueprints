@@ -18,9 +18,9 @@
 blueprint:
 
   # Blueprint metadata
-  name: IKEA Tradfri - ON/OFF Switch E1743 (with brightness clamp)
+  name: IKEA Tradfri - ON/OFF Switch E1743
   description: >
-    Control lights using an IKEA Tradfri on/off switch of type E1743. Supports dimming with long press, configurable transition/dimming behavior, and brightness clamping.
+    Control lights using an IKEA Tradfri on/off switch of type E1743. Supports dimming with long press and configurable transition/dimming behavior.
   domain: automation
   input:
 
@@ -82,32 +82,6 @@ blueprint:
           unit_of_measurement: s
           mode: slider
 
-    # The minimum brightness clamp
-    min_brightness:
-      name: Minimum Brightness (%)
-      description: Brightness won't go below this percentage
-      default: 1
-      selector:
-        number:
-          min: 1
-          max: 100
-          step: 1
-          unit_of_measurement: '%'
-          mode: slider
-
-    # The maximum brightness clamp
-    max_brightness:
-      name: Maximum Brightness (%)
-      description: Brightness won't go above this percentage
-      default: 100
-      selector:
-        number:
-          min: 1
-          max: 100
-          step: 1
-          unit_of_measurement: '%'
-          mode: slider
-
 # Define the automation trigger
 mode: restart # restart the automation if it is triggered again
 
@@ -125,8 +99,6 @@ variables:
   transition: !input on_off_transition
   dim_step: !input dim_step_pct
   dim_delay: !input dim_step_delay
-  min_brightness: !input min_brightness
-  max_brightness: !input max_brightness
 
 # Define the action to take when the event is triggered
 action:
@@ -158,17 +130,11 @@ action:
     - "{{ cluster_id == 8 }}"
     - "{{ trigger.event.data.params.move_mode == 0 }}"
     sequence:
-    - service: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.stop_dimming
     - repeat:
         while:
         - condition: template
           value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
         sequence:
-        - condition: template
-          value_template: >
-            {% set current = state_attr((!input light).entity_id if (!input light).entity_id else (!input light).entity_id[0], 'brightness') | int(0) %} {% set current_pct = (current / 255 * 100) | round(0) %} {{ current_pct < max_brightness }}
         - service: light.turn_on
           target: !input light
           data:
@@ -183,17 +149,11 @@ action:
     - "{{ cluster_id == 8 }}"
     - "{{ trigger.event.data.params.move_mode == 1 }}"
     sequence:
-    - service: input_boolean.turn_off
-      target:
-        entity_id: input_boolean.stop_dimming
     - repeat:
         while:
         - condition: template
           value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
         sequence:
-        - condition: template
-          value_template: >
-            {% set current = state_attr((!input light).entity_id if (!input light).entity_id else (!input light).entity_id[0], 'brightness') | int(0) %} {% set current_pct = (current / 255 * 100) | round(0) %} {{ current_pct > min_brightness }}
         - service: light.turn_on
           target: !input light
           data:
