@@ -20,7 +20,7 @@ blueprint:
   # Blueprint metadata
   name: IKEA Tradfri - Remote Dimmer E1810
   description: >
-    Control lights using an IKEA Tradfri remote dimmer E1810. Supports dimming with long press and configurable transition/dimming behavior. Stop commands are handled internally, no external automation triggers are required.
+    Control lights using an IKEA Tradfri remote dimmer E1810. Supports dimming control with long press and configurable behavior.
   domain: automation
   input:
 
@@ -50,7 +50,7 @@ blueprint:
       default: 0.5
       selector:
         number:
-          min: 1
+          min: 0.1
           max: 10.0
           step: 0.1
           unit_of_measurement: s
@@ -96,6 +96,7 @@ trigger:
 variables:
   command: "{{ trigger.event.data.command }}"
   cluster_id: "{{ trigger.event.data.cluster_id }}"
+  params: "{{ trigger.event.data.params }}"
   transition: !input on_off_transition
   dim_step: !input dim_step_pct
   dim_delay: !input dim_step_delay
@@ -116,9 +117,9 @@ action:
 
   # When the DIM UP button is pressed and held
   - conditions:
-    - "{{ command in ['move_with_on_off', 'move'] }}"
+    - "{{ command == 'move_with_on_off' }}"
     - "{{ cluster_id == 8 }}"
-    - "{{ trigger.event.data.params.move_mode == 0 }}"
+    - "{{ params.move_mode == 0 }}"
     sequence:
     - repeat:
         while:
@@ -132,6 +133,58 @@ action:
             transition: 0.3
         - delay:
             seconds: "{{ dim_delay }}"
+
+  # When the DIM UP button is pressed
+  - conditions:
+    - "{{ command == 'step_with_on_off' }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ params.step_mode == 0 }}"
+    sequence:
+    - service: light.turn_on
+      target: !input light
+      data:
+        brightness_step_pct: "{{ dim_step }}"
+        transition: 0.3
+
+  # When the DIM DOWN button is pressed and held
+  - conditions:
+    - "{{ command == 'move' }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ params.move_mode == 1 }}"
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
+        sequence:
+        - service: light.turn_on
+          target: !input light
+          data:
+            brightness_step_pct: "-{{ dim_step }}"
+            transition: 0.3
+        - delay:
+            seconds: "{{ dim_delay }}"
+
+  # When the DIM DOWN button is pressed
+  - conditions:
+    - "{{ command == 'step' }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ params.step_mode == 1 }}"
+    sequence:
+    - service: light.turn_on
+      target: !input light
+      data:
+        brightness_step_pct: "-{{ dim_step }}"
+        transition: 0.3
+
+  # When the STOP button is pressed
+  - conditions:
+    - "{{ command == 'stop' }}"
+    - "{{ cluster_id == 8 }}" # Mogelijk ook cluster ID 6 (on/off) of een andere
+    sequence:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.stop_dimming
 
 # Add a stop dimming action service
 - service: input_boolean.turn_off
