@@ -11,8 +11,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
 #
-# You are welcome to mention MonkeyEnterprise as a reference if desired, 
-# though it is entirely optional and not required by the license.
+# You are welcome to mention MonkeyEnterprise as a reference if desired,
+# though it is entirely optional and not required by the license, <https://monkeyenterprise.com>.
 
 # Create a blueprint for the IKEA Tradfri on/off switch E1743
 blueprint:
