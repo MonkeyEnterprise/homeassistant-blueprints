@@ -3,7 +3,7 @@
 ## 🟡 IKEA ON/OFF Switch (E1743)
 
 A blueprint to control lights using the **IKEA Tradfri ON/OFF Switch (E1743)**.  
-Supports on/off, dimming via long press, customizable transition timing, min/max brightness clamping to prevent over/under dimming.
+Supports on/off, dimming via long press, customizable transition timing.
 
 <img src="assets/ikea/ikea_e1743.png" alt="drawing" width="150"/>
 
