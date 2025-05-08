@@ -1,10 +1,30 @@
+# Copyright (c) 2025 MonkeyEnterprise
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
+#
+# You are welcome to mention MonkeyEnterprise as a reference if desired, 
+# though it is entirely optional and not required by the license.
+
+# Create a blueprint for the IKEA Tradfri on/off switch E1743
 blueprint:
+
+  # Blueprint metadata
   name: IKEA Tradfri - ON/OFF Switch E1743
   description: >
-    Control lights using an IKEA Tradfri on/off switch of type E1743.
-    Supports dimming with long press and configurable transition/dimming behavior.
+    Control lights using an IKEA Tradfri on/off switch of type E1743. Supports dimming with long press and configurable transition/dimming behavior.
   domain: automation
   input:
+
+    # The Tradfri remote to use
     remote:
       name: Remote
       description: The Tradfri remote to use
@@ -13,6 +33,8 @@ blueprint:
           integration: zha
           manufacturer: "IKEA of Sweden"
           model: "TRADFRI on/off switch"
+
+    # The light(s) to control
     light:
       name: Light(s)
       description: The light(s) to control
@@ -20,6 +42,8 @@ blueprint:
         target:
           entity:
             domain: light
+
+    # The transition time for turning the light on/off
     on_off_transition:
       name: On/Off transition (seconds)
       description: How long it takes to turn the light on/off
@@ -31,6 +55,8 @@ blueprint:
           step: 0.1
           unit_of_measurement: s
           mode: slider
+
+    # The step size for dimming
     dim_step_pct:
       name: Dim step size (%)
       description: Brightness change per dim step
@@ -41,6 +67,9 @@ blueprint:
           max: 100
           step: 1
           unit_of_measurement: '%'
+          mode: slider
+
+    # The delay between dimming steps
     dim_step_delay:
       name: Delay between dim steps (seconds)
       description: Time to wait between dimming steps
@@ -51,82 +80,98 @@ blueprint:
           max: 2
           step: 0.1
           unit_of_measurement: s
+          mode: slider
 
-mode: restart
+# Define the automation trigger
+mode: restart # restart the automation if it is triggered again
 
+# Listen for events from the remote
 trigger:
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_id: !input remote
+- platform: event
+  event_type: zha_event
+  event_data:
+    device_id: !input remote
 
+# Declare the variables to use in this automation
 variables:
   command: "{{ trigger.event.data.command }}"
   cluster_id: "{{ trigger.event.data.cluster_id }}"
-  endpoint_id: "{{ trigger.event.data.endpoint_id }}"
   transition: !input on_off_transition
   dim_step: !input dim_step_pct
   dim_delay: !input dim_step_delay
 
+# Define the action to take when the event is triggered
 action:
-  - choose:
-      - conditions:
-          - "{{ command == 'on' }}"
-          - "{{ cluster_id == 6 }}"
+- choose:
+
+  # When the button ON is pressed
+  - conditions:
+    - "{{ command == 'on' }}"
+    - "{{ cluster_id == 6 }}"
+    sequence:
+    - service: light.turn_on
+      target: !input light
+      data:
+        transition: "{{ transition }}"
+
+  # When the button OFF is pressed
+  - conditions:
+    - "{{ command == 'off' }}"
+    - "{{ cluster_id == 6 }}"
+    sequence:
+    - service: light.turn_off
+      target: !input light
+      data:
+        transition: "{{ transition }}"
+
+  # When the button ON is pressed and held   
+  - conditions:
+    - "{{ command in ['move_with_on_off', 'move'] }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ trigger.event.data.params.move_mode == 0 }}"
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
         sequence:
-          - service: light.turn_on
-            target: !input light
-            data:
-              transition: "{{ transition }}"
-      - conditions:
-          - "{{ command == 'off' }}"
-          - "{{ cluster_id == 6 }}"
+        - service: light.turn_on
+          target: !input light
+          data:
+            brightness_step_pct: "{{ dim_step }}"
+            transition: 0.3
+        - delay:
+            seconds: "{{ dim_delay }}"
+
+  # When the button OFF is pressed and held
+  - conditions:
+    - "{{ command in ['move_with_on_off', 'move'] }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ trigger.event.data.params.move_mode == 1 }}"
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
         sequence:
-          - service: light.turn_off
-            target: !input light
-            data:
-              transition: "{{ transition }}"
-      - conditions:
-          - "{{ command in ['move_with_on_off', 'move'] }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.move_mode == 0 }}"
-        sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
-              sequence:
-                - service: light.turn_on
-                  target: !input light
-                  data:
-                    brightness_step_pct: "{{ dim_step }}"
-                    transition: 0.3
-                - delay:
-                    seconds: "{{ dim_delay }}"
-      - conditions:
-          - "{{ command in ['move_with_on_off', 'move'] }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.move_mode == 1 }}"
-        sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
-              sequence:
-                - service: light.turn_on
-                  target: !input light
-                  data:
-                    brightness_step_pct: "-{{ dim_step }}"
-                    transition: 0.3
-                - delay:
-                    seconds: "{{ dim_delay }}"
-      - conditions:
-          - "{{ command in ['stop', 'stop_with_on_off'] }}"
-          - "{{ cluster_id == 8 }}"
-        sequence:
-          - service: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.stop_dimming
-  - service: input_boolean.turn_off
-    target:
-      entity_id: input_boolean.stop_dimming
+        - service: light.turn_on
+          target: !input light
+          data:
+            brightness_step_pct: "-{{ dim_step }}"
+            transition: 0.3
+        - delay:
+            seconds: "{{ dim_delay }}"
+
+  # When the button is released
+  - conditions:
+    - "{{ command in ['stop', 'stop_with_on_off'] }}"
+    - "{{ cluster_id == 8 }}"
+    sequence:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.stop_dimming
+
+# Add a stop dimming action service
+- service: input_boolean.turn_off
+  target:
+    entity_id: input_boolean.stop_dimming

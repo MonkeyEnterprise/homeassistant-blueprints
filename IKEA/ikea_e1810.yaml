@@ -1,11 +1,30 @@
+# Copyright (c) 2025 MonkeyEnterprise
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>.
+#
+# You are welcome to mention MonkeyEnterprise as a reference if desired, 
+# though it is entirely optional and not required by the license.
+
+# create a blueprint for the IKEA Tradfri remote dimmer E1810
 blueprint:
+
+  # Blueprint metadata
   name: IKEA Tradfri - Remote Dimmer E1810
   description: >
-    Control lights using an IKEA Tradfri remote dimmer E1810.
-    Supports dimming with long press and configurable transition/dimming behavior.
-    Stop commands are handled internally, no external automation triggers are required.
+    Control lights using an IKEA Tradfri remote dimmer E1810. Supports dimming with long press and configurable transition/dimming behavior. Stop commands are handled internally, no external automation triggers are required.
   domain: automation
   input:
+
+    # The Tradfri remote to use
     remote:
       name: Remote
       description: The Tradfri remote dimmer to use
@@ -14,6 +33,8 @@ blueprint:
           integration: zha
           manufacturer: "IKEA of Sweden"
           model: "TRADFRI remote control"
+
+    # The light(s) to control
     light:
       name: Light(s)
       description: The light(s) to control
@@ -21,6 +42,8 @@ blueprint:
         target:
           entity:
             domain: light
+
+    # The transition time for turning the light on/off
     on_off_transition:
       name: On/Off transition (seconds)
       description: How long it takes to turn the light on/off
@@ -32,6 +55,8 @@ blueprint:
           step: 0.1
           unit_of_measurement: s
           mode: slider
+
+    # The step size for dimming
     dim_step_pct:
       name: Dim step size (%)
       description: Brightness change per dim step
@@ -42,6 +67,9 @@ blueprint:
           max: 100
           step: 1
           unit_of_measurement: '%'
+          mode: slider
+
+    # The delay between dimming steps
     dim_step_delay:
       name: Delay between dim steps (seconds)
       description: Time to wait between dimming steps
@@ -52,15 +80,19 @@ blueprint:
           max: 2
           step: 0.1
           unit_of_measurement: s
+          mode: slider
 
-mode: restart
+# Define the automation trigger
+mode: restart # restart the automation if it is triggered again
 
+# Listen for events from the remote
 trigger:
-  - platform: event
-    event_type: zha_event
-    event_data:
-      device_id: !input remote
+- platform: event
+  event_type: zha_event
+  event_data:
+    device_id: !input remote
 
+# Declare the variables to use in this automation
 variables:
   command: "{{ trigger.event.data.command }}"
   cluster_id: "{{ trigger.event.data.cluster_id }}"
@@ -68,96 +100,40 @@ variables:
   dim_step: !input dim_step_pct
   dim_delay: !input dim_step_delay
 
+# Define the action to take when the event is triggered
 action:
-  - choose:
-      # Toggle light
-      - conditions:
-          - "{{ command == 'toggle' }}"
-          - "{{ cluster_id == 6 }}"
-        sequence:
-          - service: light.toggle
-            target: !input light
-            data:
-              transition: "{{ transition }}"
+- choose:
 
-      # Dim up (long press)
-      - conditions:
-          - "{{ command == 'move_with_on_off' }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.move_mode == 0 }}"
-        sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: true
-              sequence:
-                - service: light.turn_on
-                  target: !input light
-                  data:
-                    brightness_step_pct: "{{ dim_step }}"
-                    transition: 0.3
-                - delay:
-                    seconds: "{{ dim_delay }}"
-                - wait_for_trigger:
-                    - platform: event
-                      event_type: zha_event
-                      event_data:
-                        device_id: !input remote
-                        cluster_id: 8
-                        command:
-                          - stop
-                          - stop_with_on_off
-                - stop: Stop dimming up
+  # When the ON/OFF button is pressed
+  - conditions:
+    - "{{ command == 'toggle' }}"
+    - "{{ cluster_id == 6 }}"
+    sequence:
+    - service: light.toggle
+      target: !input light
+      data:
+        transition: "{{ transition }}"
 
-      # Dim down (long press)
-      - conditions:
-          - "{{ command == 'move' }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.move_mode == 1 }}"
+  # When the DIM UP button is pressed and held
+  - conditions:
+    - "{{ command in ['move_with_on_off', 'move'] }}"
+    - "{{ cluster_id == 8 }}"
+    - "{{ trigger.event.data.params.move_mode == 0 }}"
+    sequence:
+    - repeat:
+        while:
+        - condition: template
+          value_template: "{{ not is_state('input_boolean.stop_dimming', 'on') }}"
         sequence:
-          - repeat:
-              while:
-                - condition: template
-                  value_template: true
-              sequence:
-                - service: light.turn_on
-                  target: !input light
-                  data:
-                    brightness_step_pct: "-{{ dim_step }}"
-                    transition: 0.3
-                - delay:
-                    seconds: "{{ dim_delay }}"
-                - wait_for_trigger:
-                    - platform: event
-                      event_type: zha_event
-                      event_data:
-                        device_id: !input remote
-                        cluster_id: 8
-                        command:
-                          - stop
-                          - stop_with_on_off
-                - stop: Stop dimming down
+        - service: light.turn_on
+          target: !input light
+          data:
+            brightness_step_pct: "{{ dim_step }}"
+            transition: 0.3
+        - delay:
+            seconds: "{{ dim_delay }}"
 
-      # Step up (short press)
-      - conditions:
-          - "{{ command == 'step_with_on_off' }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.step_mode == 0 }}"
-        sequence:
-          - service: light.turn_on
-            target: !input light
-            data:
-              brightness_step_pct: "{{ dim_step }}"
-              transition: 0.3
-
-      # Step down (short press)
-      - conditions:
-          - "{{ command == 'step' }}"
-          - "{{ cluster_id == 8 }}"
-          - "{{ trigger.event.data.params.step_mode == 1 }}"
-        sequence:
-          - service: light.turn_on
-            target: !input light
-            data:
-              brightness_step_pct: "-{{ dim_step }}"
-              transition: 0.3
+# Add a stop dimming action service
+- service: input_boolean.turn_off
+  target:
+    entity_id: input_boolean.stop_dimming
