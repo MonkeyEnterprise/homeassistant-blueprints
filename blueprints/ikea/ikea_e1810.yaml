@@ -18,9 +18,9 @@
 blueprint:
 
   # Blueprint metadata
-  name: IKEA Tradfri - Remote Dimmer E1810
+  name: IKEA Tradfri - Remote Dimmer E1810 (Alleen Dimmen)
   description: >
-    Control lights using an IKEA Tradfri remote dimmer E1810. Supports dimming control with long press and configurable behavior.
+    Control lights using an IKEA Tradfri remote dimmer E1810. Supports dimming with long press and configurable transition/dimming behavior. Stop commands are handled internally, no external automation triggers are required.
   domain: automation
   input:
 
@@ -50,7 +50,7 @@ blueprint:
       default: 0.5
       selector:
         number:
-          min: 0.1
+          min: 1
           max: 10.0
           step: 0.1
           unit_of_measurement: s
@@ -82,7 +82,7 @@ blueprint:
           unit_of_measurement: s
           mode: slider
 
-# Define the automation trigger
+ # Define the automation trigger
 mode: restart # restart the automation if it is triggered again
 
 # Listen for events from the remote
@@ -96,7 +96,6 @@ trigger:
 variables:
   command: "{{ trigger.event.data.command }}"
   cluster_id: "{{ trigger.event.data.cluster_id }}"
-  params: "{{ trigger.event.data.params }}"
   transition: !input on_off_transition
   dim_step: !input dim_step_pct
   dim_delay: !input dim_step_delay
@@ -119,7 +118,7 @@ action:
   - conditions:
     - "{{ command == 'move_with_on_off' }}"
     - "{{ cluster_id == 8 }}"
-    - "{{ params.move_mode == 0 }}"
+    - "{{ trigger.event.data.params.move_mode == 0 }}"
     sequence:
     - repeat:
         while:
@@ -138,7 +137,7 @@ action:
   - conditions:
     - "{{ command == 'step_with_on_off' }}"
     - "{{ cluster_id == 8 }}"
-    - "{{ params.step_mode == 0 }}"
+    - "{{ trigger.event.data.params.step_mode == 0 }}"
     sequence:
     - service: light.turn_on
       target: !input light
@@ -150,7 +149,7 @@ action:
   - conditions:
     - "{{ command == 'move' }}"
     - "{{ cluster_id == 8 }}"
-    - "{{ params.move_mode == 1 }}"
+    - "{{ trigger.event.data.params.move_mode == 1 }}"
     sequence:
     - repeat:
         while:
@@ -169,22 +168,13 @@ action:
   - conditions:
     - "{{ command == 'step' }}"
     - "{{ cluster_id == 8 }}"
-    - "{{ params.step_mode == 1 }}"
+    - "{{ trigger.event.data.params.param1 == 3329 }}"
     sequence:
     - service: light.turn_on
       target: !input light
       data:
         brightness_step_pct: "-{{ dim_step }}"
         transition: 0.3
-
-  # When the STOP button is pressed
-  - conditions:
-    - "{{ command == 'stop' }}"
-    - "{{ cluster_id == 8 }}" # Mogelijk ook cluster ID 6 (on/off) of een andere
-    sequence:
-    - service: input_boolean.turn_on
-      target:
-        entity_id: input_boolean.stop_dimming
 
 # Add a stop dimming action service
 - service: input_boolean.turn_off
